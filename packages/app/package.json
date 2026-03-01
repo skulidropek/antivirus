@@ -16,7 +16,8 @@
     "prestart": "pnpm run build",
     "start": "node dist/main.js",
     "test": "pnpm run lint:tests && vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:kpi": "vitest run --config vitest.kpi.config.ts"
   },
   "repository": {
     "type": "git",

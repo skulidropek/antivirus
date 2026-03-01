@@ -101,6 +101,74 @@ describe("scanFile", () => {
       )
     }))
 
+  it.effect("matches grouped signature with ???? as any two bytes", () =>
+    Effect.gen(function*(_) {
+      const report = yield* _(
+        readScanReport(
+          [
+            0x00,
+            0x08,
+            0xF8,
+            0x12,
+            0x34,
+            0xD7,
+            0x44,
+            0x56,
+            0xCC,
+            0x09,
+            0x96,
+            0xA8,
+            0xFC,
+            0x8F,
+            0xEE,
+            0xA6,
+            0xAF,
+            0x99,
+            0x08,
+            0xF8,
+            0xAB,
+            0xCD,
+            0xD7,
+            0x44,
+            0x56,
+            0xCC,
+            0x09,
+            0x96,
+            0xA8,
+            0xFC,
+            0x8F,
+            0xEE,
+            0xA6,
+            0xAF
+          ],
+          [
+            {
+              id: "issue-1-example",
+              pattern: "08f8 ???? d744 56cc 0996 a8fc 8fee a6af"
+            }
+          ],
+          { chunkSize: 7 }
+        )
+      )
+
+      yield* _(
+        Effect.sync(() => {
+          expect(report.matches).toEqual([
+            {
+              signatureId: "issue-1-example",
+              pattern: "08f8 ???? d744 56cc 0996 a8fc 8fee a6af",
+              offset: 1
+            },
+            {
+              signatureId: "issue-1-example",
+              pattern: "08f8 ???? d744 56cc 0996 a8fc 8fee a6af",
+              offset: 18
+            }
+          ])
+        })
+      )
+    }))
+
   it.effect("stops early when max-matches limit is reached", () =>
     Effect.gen(function*(_) {
       const report = yield* _(

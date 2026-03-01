@@ -19,7 +19,8 @@
     "lint:effect": "pnpm --filter @effect-template/app lint:effect",
     "test": "pnpm --filter @effect-template/app test",
     "typecheck": "pnpm --filter @effect-template/app typecheck",
-    "start": "pnpm --filter @effect-template/app start"
+    "start": "pnpm --filter @effect-template/app start",
+    "kpi": "pnpm --filter @effect-template/app test:kpi"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",

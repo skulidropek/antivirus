@@ -27,6 +27,51 @@ describe("signature parser", () => {
     expect([...compiled.anchor]).toEqual([0xC3])
   })
 
+  it("supports grouped tokens like 08f8 and ????", () => {
+    const compiled = compileSignature({
+      id: "grouped",
+      pattern: "08f8 ???? d744 56cc 0996 a8fc 8fee a6af"
+    })
+
+    expect([...compiled.values]).toEqual([
+      0x08,
+      0xF8,
+      0x00,
+      0x00,
+      0xD7,
+      0x44,
+      0x56,
+      0xCC,
+      0x09,
+      0x96,
+      0xA8,
+      0xFC,
+      0x8F,
+      0xEE,
+      0xA6,
+      0xAF
+    ])
+
+    expect([...compiled.masks]).toEqual([
+      0xFF,
+      0xFF,
+      0x00,
+      0x00,
+      0xFF,
+      0xFF,
+      0xFF,
+      0xFF,
+      0xFF,
+      0xFF,
+      0xFF,
+      0xFF,
+      0xFF,
+      0xFF,
+      0xFF,
+      0xFF
+    ])
+  })
+
   it("parses inline and file-based signatures", () => {
     const inline = parseInlineSignature("botnet:DE AD BE EF", 1)
     const fromFile = parseSignatureList(

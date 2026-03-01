@@ -48,14 +48,28 @@ const parseByteToken = (token: string): ParsedByte => {
   }
 }
 
-const tokenizePattern = (pattern: string): ReadonlyArray<string> => {
-  const tokens = pattern.trim().split(/\s+/).filter((token) => token.length > 0)
+const splitTokenToByteTokens = (token: string): ReadonlyArray<string> => {
+  if (token.length % 2 !== 0) {
+    throw new Error(`Invalid token \"${token}\": expected an even number of HEX characters`)
+  }
 
-  if (tokens.length === 0) {
+  const byteTokens: string[] = []
+
+  for (let index = 0; index < token.length; index += 2) {
+    byteTokens.push(token.slice(index, index + 2))
+  }
+
+  return byteTokens
+}
+
+const tokenizePattern = (pattern: string): ReadonlyArray<string> => {
+  const sourceTokens = pattern.trim().split(/\s+/).filter((token) => token.length > 0)
+
+  if (sourceTokens.length === 0) {
     throw new Error("Signature pattern is empty")
   }
 
-  return tokens
+  return sourceTokens.flatMap((token) => splitTokenToByteTokens(token))
 }
 
 const findBestAnchor = (masks: Uint8Array): { readonly start: number; readonly length: number } => {

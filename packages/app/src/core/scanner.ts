@@ -1,7 +1,6 @@
 import { open } from "node:fs/promises"
 import { performance } from "node:perf_hooks"
 
-import { AnchorAutomaton } from "./ahoCorasick.js"
 import type { CompiledSignature } from "./signature.js"
 
 export interface SignatureMatch {
@@ -61,6 +60,64 @@ const parsePositiveInt = (value: number, optionName: string): number => {
   return value
 }
 
+const findMatchesInChunk = (
+  combined: Buffer,
+  signatures: ReadonlyArray<CompiledSignature>,
+  chunkStartOffset: number,
+  bytesScanned: number,
+  matches: Array<SignatureMatch>,
+  maxMatches: number
+): boolean => {
+  for (const signature of signatures) {
+    let searchFrom = 0
+
+    while (searchFrom < combined.length) {
+      const anchorStart = combined.indexOf(signature.anchor, searchFrom)
+
+      if (anchorStart < 0) {
+        break
+      }
+
+      searchFrom = anchorStart + 1
+
+      const candidateStart = anchorStart - signature.anchorOffset
+
+      if (candidateStart < 0) {
+        continue
+      }
+
+      const candidateEnd = candidateStart + signature.length
+
+      if (candidateEnd > combined.length) {
+        continue
+      }
+
+      const absoluteOffset = chunkStartOffset + candidateStart
+      const earliestNewOffset = bytesScanned - (signature.length - 1)
+
+      if (absoluteOffset < earliestNewOffset) {
+        continue
+      }
+
+      if (!matchesSignatureAt(combined, candidateStart, signature)) {
+        continue
+      }
+
+      matches.push({
+        signatureId: signature.id,
+        pattern: signature.pattern,
+        offset: absoluteOffset
+      })
+
+      if (matches.length >= maxMatches) {
+        return true
+      }
+    }
+  }
+
+  return false
+}
+
 export const scanFile = async (
   filePath: string,
   signatures: ReadonlyArray<CompiledSignature>,
@@ -79,7 +136,6 @@ export const scanFile = async (
   const maxPatternLength = Math.max(...signatures.map((signature) => signature.length))
   const overlap = Math.max(0, maxPatternLength - 1)
 
-  const automaton = AnchorAutomaton.build(signatures)
   const matches: SignatureMatch[] = []
   const startedAt = performance.now()
 
@@ -103,59 +159,22 @@ export const scanFile = async (
 
       const chunkStartOffset = bytesScanned - tail.length
 
-      automaton.forEachHit(combined, (signatureIndex, anchorEnd) => {
-        if (truncated) {
-          return
-        }
-
-        const signature = signatures[signatureIndex]
-
-        if (signature === undefined) {
-          return
-        }
-
-        const anchorLength = signature.anchor.length
-        const anchorStart = anchorEnd - anchorLength + 1
-        const candidateStart = anchorStart - signature.anchorOffset
-
-        if (candidateStart < 0) {
-          return
-        }
-
-        const candidateEnd = candidateStart + signature.length
-
-        if (candidateEnd > combined.length) {
-          return
-        }
-
-        const absoluteOffset = chunkStartOffset + candidateStart
-        const earliestNewOffset = bytesScanned - (signature.length - 1)
-
-        if (absoluteOffset < earliestNewOffset) {
-          return
-        }
-
-        if (!matchesSignatureAt(combined, candidateStart, signature)) {
-          return
-        }
-
-        matches.push({
-          signatureId: signature.id,
-          pattern: signature.pattern,
-          offset: absoluteOffset
-        })
-
-        if (matches.length >= maxMatches) {
-          truncated = true
-        }
-      })
+      truncated = findMatchesInChunk(
+        combined,
+        signatures,
+        chunkStartOffset,
+        bytesScanned,
+        matches,
+        maxMatches
+      )
 
       bytesScanned += bytesRead
 
       const nextTailLength = Math.min(overlap, combined.length)
-      tail = nextTailLength > 0
-        ? Buffer.from(combined.subarray(combined.length - nextTailLength))
-        : Buffer.alloc(0)
+      tail =
+        nextTailLength > 0
+          ? Buffer.from(combined.subarray(combined.length - nextTailLength))
+          : Buffer.alloc(0)
     }
   } finally {
     await fileHandle.close()
