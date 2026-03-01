@@ -28,7 +28,9 @@ const renderTextReport = (report: ScanReport): string => {
   lines.push("Detected signatures:")
 
   for (const match of report.matches) {
-    lines.push(`- ${match.signatureId} at offset 0x${match.offset.toString(16)} (${match.offset})`)
+    lines.push(
+      `- ${match.signatureId} at offset 0x${match.offset.toString(16)} (${match.offset}): ${match.matchedHex}`
+    )
   }
 
   return lines.join("\n")

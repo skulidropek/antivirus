@@ -59,11 +59,19 @@ describe("CLI program", () => {
             const report = JSON.parse(output) as {
               readonly matches: ReadonlyArray<{
                 readonly signatureId: string
+                readonly matchedHex: string
                 readonly offset: number
               }>
             }
 
-            expect(report.matches).toEqual([{ signatureId: "virus", pattern: "DE AD ?? BE EF", offset: 0 }])
+            expect(report.matches).toEqual([
+              {
+                signatureId: "virus",
+                pattern: "DE AD ?? BE EF",
+                matchedHex: "dead 01be ef",
+                offset: 0
+              }
+            ])
             expect(logSpy).toHaveBeenCalledTimes(1)
           })
         )

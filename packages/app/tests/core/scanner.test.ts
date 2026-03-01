@@ -44,6 +44,7 @@ describe("scanFile", () => {
             {
               signatureId: "cross-boundary",
               pattern: "AA BB CC DD",
+              matchedHex: "aabb ccdd",
               offset: 1
             }
           ])
@@ -82,16 +83,19 @@ describe("scanFile", () => {
             {
               signatureId: "wildcard",
               pattern: "DE AD ?? BE EF",
+              matchedHex: "dead 11be ef",
               offset: 0
             },
             {
               signatureId: "exact",
               pattern: "90 DE AD",
+              matchedHex: "90de ad",
               offset: 5
             },
             {
               signatureId: "wildcard",
               pattern: "DE AD ?? BE EF",
+              matchedHex: "dead 22be ef",
               offset: 6
             }
           ])
@@ -157,11 +161,13 @@ describe("scanFile", () => {
             {
               signatureId: "issue-1-example",
               pattern: "08f8 ???? d744 56cc 0996 a8fc 8fee a6af",
+              matchedHex: "08f8 1234 d744 56cc 0996 a8fc 8fee a6af",
               offset: 1
             },
             {
               signatureId: "issue-1-example",
               pattern: "08f8 ???? d744 56cc 0996 a8fc 8fee a6af",
+              matchedHex: "08f8 abcd d744 56cc 0996 a8fc 8fee a6af",
               offset: 18
             }
           ])

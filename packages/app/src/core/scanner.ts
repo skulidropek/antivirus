@@ -6,6 +6,7 @@ import type { CompiledSignature } from "./signature.js"
 export interface SignatureMatch {
   readonly signatureId: string
   readonly pattern: string
+  readonly matchedHex: string
   readonly offset: number
 }
 
@@ -65,6 +66,36 @@ const parsePositiveInt = (value: number, optionName: string): number => {
   }
 
   return value
+}
+
+const toHexByte = (value: number): string => value.toString(16).padStart(2, "0")
+
+const formatMatchedHex = (data: Uint8Array, start: number, length: number): string => {
+  const words: string[] = []
+
+  for (let index = 0; index < length; index += 2) {
+    const firstByte = data[start + index]
+
+    if (firstByte === undefined) {
+      break
+    }
+
+    if (index + 1 >= length) {
+      words.push(toHexByte(firstByte))
+      break
+    }
+
+    const secondByte = data[start + index + 1]
+
+    if (secondByte === undefined) {
+      words.push(toHexByte(firstByte))
+      break
+    }
+
+    words.push(`${toHexByte(firstByte)}${toHexByte(secondByte)}`)
+  }
+
+  return words.join(" ")
 }
 
 const buildAnchorBuckets = (signatures: ReadonlyArray<CompiledSignature>): AnchorBuckets => {
@@ -159,6 +190,7 @@ const processCandidates = (
     matches.push({
       signatureId: signature.id,
       pattern: signature.pattern,
+      matchedHex: formatMatchedHex(data, candidateStart, signature.length),
       offset: absoluteOffset
     })
 
