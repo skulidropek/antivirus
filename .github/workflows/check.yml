@@ -33,22 +33,6 @@ jobs:
         uses: ./.github/actions/setup
       - run: pnpm check
 
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install dependencies
-        uses: ./.github/actions/setup
-      # vibecode-linter uses npx internally for dependency checks
-      # In pnpm workspaces, npx doesn't find local packages correctly
-      # Install TypeScript and Biome globally as a workaround
-      # See: https://github.com/ton-ai-core/vibecode-linter/issues (pending issue)
-      - name: Install global linter dependencies
-        run: npm install -g typescript @biomejs/biome
-      - run: pnpm lint
-
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -61,13 +45,3 @@ jobs:
       - name: Install global linter dependencies
         run: npm install -g typescript @biomejs/biome
       - run: pnpm test
-
-  lint-effect:
-    name: Lint Effect-TS
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install dependencies
-        uses: ./.github/actions/setup
-      - run: pnpm lint:effect

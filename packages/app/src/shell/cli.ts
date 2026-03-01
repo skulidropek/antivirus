@@ -152,14 +152,17 @@ const parseCli = async (argv: ReadonlyArray<string>): Promise<CliCommand> => {
     throw new Error("At least one signature must be provided")
   }
 
-  return {
+  const scanCommandBase = {
     kind: "scan",
     filePath,
     signatures,
     chunkSize,
-    maxMatches,
     json
-  }
+  } as const satisfies Omit<ScanCommand, "maxMatches">
+
+  return maxMatches === undefined
+    ? scanCommandBase
+    : { ...scanCommandBase, maxMatches }
 }
 
 const toError = (error: unknown): Error =>

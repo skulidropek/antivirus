@@ -130,7 +130,13 @@ export const parseInlineSignature = (rawValue: string, ordinal: number): Signatu
   const namedMatch = NAMED_SIGNATURE_PATTERN.exec(trimmed)
 
   if (namedMatch !== null) {
-    const [, id, pattern] = namedMatch
+    const id = namedMatch[1]
+    const pattern = namedMatch[2]
+
+    if (id === undefined || pattern === undefined) {
+      throw new Error("Named signature groups are missing")
+    }
+
     return { id, pattern: pattern.trim() }
   }
 
@@ -157,7 +163,13 @@ export const parseSignatureList = (
     const namedMatch = NAMED_SIGNATURE_PATTERN.exec(line)
 
     if (namedMatch !== null) {
-      const [, id, pattern] = namedMatch
+      const id = namedMatch[1]
+      const pattern = namedMatch[2]
+
+      if (id === undefined || pattern === undefined) {
+        throw new Error("Named signature groups are missing")
+      }
+
       definitions.push({ id, pattern: pattern.trim() })
       continue
     }

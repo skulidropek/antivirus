@@ -54,6 +54,11 @@ export class AnchorAutomaton {
 
     for (let head = 0; head < queue.length; head += 1) {
       const current = queue[head]
+
+      if (current === undefined) {
+        continue
+      }
+
       const currentNode = nodes[current]
 
       if (currentNode === undefined) {

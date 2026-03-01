@@ -51,11 +51,13 @@ export const program = Effect.gen(function* (_) {
 
   const scanReport = yield* _(
     Effect.tryPromise({
-      try: () =>
-        scanFile(command.filePath, compiledSignatures, {
-          chunkSize: command.chunkSize,
-          maxMatches: command.maxMatches
-        }),
+      try: () => {
+        const scanOptions = command.maxMatches === undefined
+          ? { chunkSize: command.chunkSize }
+          : { chunkSize: command.chunkSize, maxMatches: command.maxMatches }
+
+        return scanFile(command.filePath, compiledSignatures, scanOptions)
+      },
       catch: toError
     })
   )
