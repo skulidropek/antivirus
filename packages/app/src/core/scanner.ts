@@ -24,6 +24,13 @@ export interface ScanReport {
 }
 
 const DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024
+const IN_MEMORY_SCAN_LIMIT_BYTES = 2 * 1024 * 1024 * 1024
+
+interface AnchorBuckets {
+  readonly hasOneByteAnchors: boolean
+  readonly byOne: ReadonlyArray<ReadonlyArray<CompiledSignature> | undefined>
+  readonly byTwo: ReadonlyArray<ReadonlyArray<CompiledSignature> | undefined>
+}
 
 const matchesSignatureAt = (
   data: Uint8Array,
@@ -60,56 +67,199 @@ const parsePositiveInt = (value: number, optionName: string): number => {
   return value
 }
 
-const findMatchesInChunk = (
-  combined: Buffer,
-  signatures: ReadonlyArray<CompiledSignature>,
+const buildAnchorBuckets = (signatures: ReadonlyArray<CompiledSignature>): AnchorBuckets => {
+  const byOne: Array<Array<CompiledSignature> | undefined> = new Array(256)
+  const byTwo: Array<Array<CompiledSignature> | undefined> = new Array(65_536)
+  let hasOneByteAnchors = false
+
+  for (const signature of signatures) {
+    const firstByte = signature.anchor[0]
+
+    if (firstByte === undefined) {
+      continue
+    }
+
+    if (signature.anchor.length === 1) {
+      hasOneByteAnchors = true
+      const bucket = byOne[firstByte] ?? []
+      bucket.push(signature)
+      byOne[firstByte] = bucket
+      continue
+    }
+
+    const secondByte = signature.anchor[1]
+
+    if (secondByte === undefined) {
+      continue
+    }
+
+    const key = (firstByte << 8) | secondByte
+    const bucket = byTwo[key] ?? []
+    bucket.push(signature)
+    byTwo[key] = bucket
+  }
+
+  return { hasOneByteAnchors, byOne, byTwo }
+}
+
+const processCandidates = (
+  data: Uint8Array,
+  anchorStart: number,
+  candidates: ReadonlyArray<CompiledSignature> | undefined,
   chunkStartOffset: number,
-  bytesScanned: number,
+  bytesScannedBeforeChunk: number,
   matches: Array<SignatureMatch>,
   maxMatches: number
 ): boolean => {
-  for (const signature of signatures) {
-    let searchFrom = 0
+  if (candidates === undefined) {
+    return false
+  }
 
-    while (searchFrom < combined.length) {
-      const anchorStart = combined.indexOf(signature.anchor, searchFrom)
+  for (const signature of candidates) {
+    const anchorLength = signature.anchor.length
+    let anchorMatched = true
 
-      if (anchorStart < 0) {
+    for (let index = 2; index < anchorLength; index += 1) {
+      const expected = signature.anchor[index]
+      const actual = data[anchorStart + index]
+
+      if (expected === undefined || actual !== expected) {
+        anchorMatched = false
         break
       }
+    }
 
-      searchFrom = anchorStart + 1
+    if (!anchorMatched) {
+      continue
+    }
 
-      const candidateStart = anchorStart - signature.anchorOffset
+    const candidateStart = anchorStart - signature.anchorOffset
 
-      if (candidateStart < 0) {
+    if (candidateStart < 0) {
+      continue
+    }
+
+    const candidateEnd = candidateStart + signature.length
+
+    if (candidateEnd > data.length) {
+      continue
+    }
+
+    const absoluteOffset = chunkStartOffset + candidateStart
+    const earliestNewOffset = bytesScannedBeforeChunk - (signature.length - 1)
+
+    if (absoluteOffset < earliestNewOffset) {
+      continue
+    }
+
+    if (!matchesSignatureAt(data, candidateStart, signature)) {
+      continue
+    }
+
+    matches.push({
+      signatureId: signature.id,
+      pattern: signature.pattern,
+      offset: absoluteOffset
+    })
+
+    if (matches.length >= maxMatches) {
+      return true
+    }
+  }
+
+  return false
+}
+
+const findMatchesInWindow = (
+  data: Uint8Array,
+  buckets: AnchorBuckets,
+  chunkStartOffset: number,
+  bytesScannedBeforeChunk: number,
+  matches: Array<SignatureMatch>,
+  maxMatches: number
+): boolean => {
+  const lastIndex = data.length - 1
+
+  if (!buckets.hasOneByteAnchors) {
+    for (let anchorStart = 0; anchorStart < lastIndex; anchorStart += 1) {
+      const firstByte = data[anchorStart]
+      const secondByte = data[anchorStart + 1]
+
+      if (firstByte === undefined || secondByte === undefined) {
         continue
       }
 
-      const candidateEnd = candidateStart + signature.length
+      const key = (firstByte << 8) | secondByte
+      const twoByteCandidates = buckets.byTwo[key]
 
-      if (candidateEnd > combined.length) {
+      if (twoByteCandidates === undefined) {
         continue
       }
 
-      const absoluteOffset = chunkStartOffset + candidateStart
-      const earliestNewOffset = bytesScanned - (signature.length - 1)
-
-      if (absoluteOffset < earliestNewOffset) {
-        continue
+      if (
+        processCandidates(
+          data,
+          anchorStart,
+          twoByteCandidates,
+          chunkStartOffset,
+          bytesScannedBeforeChunk,
+          matches,
+          maxMatches
+        )
+      ) {
+        return true
       }
+    }
 
-      if (!matchesSignatureAt(combined, candidateStart, signature)) {
-        continue
+    return false
+  }
+
+  for (let anchorStart = 0; anchorStart <= lastIndex; anchorStart += 1) {
+    const firstByte = data[anchorStart]
+
+    if (firstByte === undefined) {
+      continue
+    }
+
+    if (anchorStart < lastIndex) {
+      const secondByte = data[anchorStart + 1]
+
+      if (secondByte !== undefined) {
+        const key = (firstByte << 8) | secondByte
+        const twoByteCandidates = buckets.byTwo[key]
+
+        if (twoByteCandidates !== undefined) {
+          if (
+            processCandidates(
+              data,
+              anchorStart,
+              twoByteCandidates,
+              chunkStartOffset,
+              bytesScannedBeforeChunk,
+              matches,
+              maxMatches
+            )
+          ) {
+            return true
+          }
+        }
       }
+    }
 
-      matches.push({
-        signatureId: signature.id,
-        pattern: signature.pattern,
-        offset: absoluteOffset
-      })
+    const oneByteCandidates = buckets.byOne[firstByte]
 
-      if (matches.length >= maxMatches) {
+    if (oneByteCandidates !== undefined) {
+      if (
+        processCandidates(
+          data,
+          anchorStart,
+          oneByteCandidates,
+          chunkStartOffset,
+          bytesScannedBeforeChunk,
+          matches,
+          maxMatches
+        )
+      ) {
         return true
       }
     }
@@ -136,45 +286,57 @@ export const scanFile = async (
   const maxPatternLength = Math.max(...signatures.map((signature) => signature.length))
   const overlap = Math.max(0, maxPatternLength - 1)
 
+  const buckets = buildAnchorBuckets(signatures)
+
   const matches: SignatureMatch[] = []
   const startedAt = performance.now()
 
-  const readBuffer = Buffer.allocUnsafe(chunkSize)
   let bytesScanned = 0
-  let tail = Buffer.alloc(0)
   let truncated = false
 
   const fileHandle = await open(filePath, "r")
 
   try {
-    while (!truncated) {
-      const { bytesRead } = await fileHandle.read(readBuffer, 0, chunkSize, bytesScanned)
+    const fileStats = await fileHandle.stat()
 
-      if (bytesRead === 0) {
-        break
+    if (fileStats.size <= IN_MEMORY_SCAN_LIMIT_BYTES) {
+      const data = await fileHandle.readFile()
+
+      bytesScanned = data.length
+      truncated = findMatchesInWindow(data, buckets, 0, 0, matches, maxMatches)
+    } else {
+      const readBuffer = Buffer.allocUnsafe(chunkSize)
+      let tail = Buffer.alloc(0)
+
+      while (!truncated) {
+        const { bytesRead } = await fileHandle.read(readBuffer, 0, chunkSize, bytesScanned)
+
+        if (bytesRead === 0) {
+          break
+        }
+
+        const chunk = readBuffer.subarray(0, bytesRead)
+        const combined = tail.length > 0 ? Buffer.concat([tail, chunk]) : chunk
+
+        const chunkStartOffset = bytesScanned - tail.length
+
+        truncated = findMatchesInWindow(
+          combined,
+          buckets,
+          chunkStartOffset,
+          bytesScanned,
+          matches,
+          maxMatches
+        )
+
+        bytesScanned += bytesRead
+
+        const nextTailLength = Math.min(overlap, combined.length)
+        tail =
+          nextTailLength > 0
+            ? Buffer.from(combined.subarray(combined.length - nextTailLength))
+            : Buffer.alloc(0)
       }
-
-      const chunk = readBuffer.subarray(0, bytesRead)
-      const combined = tail.length > 0 ? Buffer.concat([tail, chunk]) : chunk
-
-      const chunkStartOffset = bytesScanned - tail.length
-
-      truncated = findMatchesInChunk(
-        combined,
-        signatures,
-        chunkStartOffset,
-        bytesScanned,
-        matches,
-        maxMatches
-      )
-
-      bytesScanned += bytesRead
-
-      const nextTailLength = Math.min(overlap, combined.length)
-      tail =
-        nextTailLength > 0
-          ? Buffer.from(combined.subarray(combined.length - nextTailLength))
-          : Buffer.alloc(0)
     }
   } finally {
     await fileHandle.close()
