@@ -3,9 +3,9 @@ name: Checking Dependencies
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main]
+    branches: [main, chore/bootstrap-base]
   push:
-    branches: [main]
+    branches: [main, chore/bootstrap-base]
 
 jobs:
   dist-deps-prune:
