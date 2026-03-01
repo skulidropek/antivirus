@@ -8,13 +8,13 @@ import { Effect } from "effect"
 import { scanFile } from "../src/core/scanner.js"
 import { compileSignatures } from "../src/core/signature.js"
 
-const KPI_TIMEOUT_MS = 4000
+const KPI_TIMEOUT_MS = 500
 
 const resolveKpiFilePath = (): string =>
   process.env.KPI_FILE_PATH ?? path.resolve(process.cwd(), "../../.downloads/1Gb.dat")
 
 describe("scanner performance KPI", () => {
-  it.effect("scans 1GB with two wildcard signatures in <= 4 seconds", () =>
+  it.effect("scans 1GB with two wildcard signatures in <= 0.5 seconds", () =>
     Effect.gen(function*(_) {
       const filePath = resolveKpiFilePath()
 
@@ -34,6 +34,17 @@ describe("scanner performance KPI", () => {
           pattern: "452f ???? 763b ???? 8985 ???? 8892 ????"
         }
       ])
+
+      // Warm up once to avoid cold-start page-cache noise in a hard performance gate.
+      yield* _(
+        Effect.tryPromise({
+          try: () =>
+            scanFile(filePath, signatures, {
+              chunkSize: 128 * 1024 * 1024
+            }),
+          catch: (error) => error instanceof Error ? error : new Error(String(error))
+        })
+      )
 
       const startedAt = performance.now()
 

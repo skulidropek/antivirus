@@ -68,6 +68,9 @@ const parsePositiveInt = (value: number, optionName: string): number => {
   return value
 }
 
+const canUseIndexedAnchorScan = (signatures: ReadonlyArray<CompiledSignature>): boolean =>
+  signatures.length <= 32 && signatures.every((signature) => signature.anchor.length >= 2)
+
 const toHexByte = (value: number): string => value.toString(16).padStart(2, "0")
 
 const formatMatchedHex = (data: Uint8Array, start: number, length: number): string => {
@@ -131,6 +134,65 @@ const buildAnchorBuckets = (signatures: ReadonlyArray<CompiledSignature>): Ancho
   }
 
   return { hasOneByteAnchors, byOne, byTwo }
+}
+
+const findMatchesByAnchorIndexOf = (
+  data: Buffer,
+  signatures: ReadonlyArray<CompiledSignature>,
+  chunkStartOffset: number,
+  bytesScannedBeforeChunk: number,
+  matches: Array<SignatureMatch>,
+  maxMatches: number
+): boolean => {
+  for (const signature of signatures) {
+    let searchFrom = 0
+
+    while (searchFrom < data.length) {
+      const anchorStart = data.indexOf(signature.anchor, searchFrom)
+
+      if (anchorStart < 0) {
+        break
+      }
+
+      searchFrom = anchorStart + 1
+
+      const candidateStart = anchorStart - signature.anchorOffset
+
+      if (candidateStart < 0) {
+        continue
+      }
+
+      const candidateEnd = candidateStart + signature.length
+
+      if (candidateEnd > data.length) {
+        continue
+      }
+
+      const absoluteOffset = chunkStartOffset + candidateStart
+      const earliestNewOffset = bytesScannedBeforeChunk - (signature.length - 1)
+
+      if (absoluteOffset < earliestNewOffset) {
+        continue
+      }
+
+      if (!matchesSignatureAt(data, candidateStart, signature)) {
+        continue
+      }
+
+      matches.push({
+        signatureId: signature.id,
+        pattern: signature.pattern,
+        matchedHex: formatMatchedHex(data, candidateStart, signature.length),
+        offset: absoluteOffset
+      })
+
+      if (matches.length >= maxMatches) {
+        return true
+      }
+    }
+  }
+
+  return false
 }
 
 const processCandidates = (
@@ -335,7 +397,9 @@ export const scanFile = async (
       const data = await fileHandle.readFile()
 
       bytesScanned = data.length
-      truncated = findMatchesInWindow(data, buckets, 0, 0, matches, maxMatches)
+      truncated = canUseIndexedAnchorScan(signatures)
+        ? findMatchesByAnchorIndexOf(data, signatures, 0, 0, matches, maxMatches)
+        : findMatchesInWindow(data, buckets, 0, 0, matches, maxMatches)
     } else {
       const readBuffer = Buffer.allocUnsafe(chunkSize)
       let tail = Buffer.alloc(0)
